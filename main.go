@@ -5,6 +5,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"regexp"
+	"strings"
 )
 
 func main() {
@@ -24,6 +26,7 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+
 	// close after usage
 	defer resp.Body.Close()
 
@@ -33,11 +36,20 @@ func main() {
 		log.Printf("Error reading body: %v", err)
 	}
 
-	// dump contents into a file
-	// err = ioutil.WriteFile("temp.txt", body, 0777)
+	// regex to fetch video urls
+	//re := regexp.MustCompile(`{"itag"+.+\d+.+}`)
+	re := regexp.MustCompile(`"adaptiveFormats"+.+\]\},"playerAds"`)
+
+	// get video source & meta in json format
+	vs := strings.Replace(string(re.FindAll(body, -1)[0]), "\"adaptiveFormats\":[", "", 1)
+	vs = strings.Replace(vs, "]},\"playerAds\"", "", 1)
+
+	println(vs)
+
+	// dump contents into json file
+	// err = ioutil.WriteFile("temp.json", vs[0], 0777)
 	// if err != nil {
 	// 	log.Fatal(err)
 	// }
 
-	println(string(body))
 }
