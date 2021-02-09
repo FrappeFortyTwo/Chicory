@@ -1,13 +1,52 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 )
+
+// Formats struct which contains array of formats
+type Formats struct {
+	Formats []Format `json:"formats"`
+}
+
+// Format struct which contains Format meta data
+type Format struct {
+	Itag             int        `json:"itag"`
+	MimeType         string     `json:"mimeType"`
+	Bitrate          int32      `json:"bitrate"`
+	Width            int        `json:"width"`
+	Height           int        `json:"height"`
+	InitRange        InitRange  `json:"initRange"`
+	IndexRange       IndexRange `json:"indexRange"`
+	LastModified     string     `json:"lastModified"`
+	ContentLength    string     `json:"contentLength"`
+	Quality          string     `json:"quality"`
+	Fps              int        `json:"fps"`
+	QualityLabel     string     `json:"qualityLabel"`
+	ProjectionType   string     `json:"projectionType"`
+	AverageBitrate   int32      `json:"averageBitrate"`
+	ApproxDurationMs string     `json:"approxDurationMS"`
+	SignatureCipher  string     `json:"signatureCipher"`
+}
+
+// InitRange which contains it's Start and End
+type InitRange struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
+
+// IndexRange contains it's Start and End
+type IndexRange struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
 
 func main() {
 
@@ -18,8 +57,10 @@ func main() {
 	// parse command-line arguments
 	flag.Parse()
 
-	println(*url)
-	println(*bulk)
+	println("\n // ---------- Chicory Youtube Video Downloader ---------- // \n")
+	println("* Fetching video from  : ", *url)
+	println("* Bulk download option : ", *bulk)
+	println()
 
 	// fetch source for url
 	resp, err := http.Get(*url)
@@ -36,20 +77,41 @@ func main() {
 		log.Printf("Error reading body: %v", err)
 	}
 
-	// regex to fetch video urls
-	//re := regexp.MustCompile(`{"itag"+.+\d+.+}`)
+	// regex to fetch video urls & meta data
 	re := regexp.MustCompile(`"adaptiveFormats"+.+\]\},"playerAds"`)
 
-	// get video source & meta in json format
-	vs := strings.Replace(string(re.FindAll(body, -1)[0]), "\"adaptiveFormats\":[", "", 1)
-	vs = strings.Replace(vs, "]},\"playerAds\"", "", 1)
+	// process data into json format
+	vs := strings.Replace(string(re.FindAll(body, -1)[0]), "\"adaptiveFormats\":", "{ \"formats\":", 1)
+	vs = strings.Replace(vs, "},\"playerAds\"", "}", 1)
 
-	println(vs)
+	// dump contents into file
+	err = ioutil.WriteFile("temp.json", []byte(vs), 0777)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	// dump contents into json file
-	// err = ioutil.WriteFile("temp.json", vs[0], 0777)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
+	// read file as json
+	jsonFile, err := os.Open("temp.json")
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	defer jsonFile.Close()
+
+	byteVal, _ := ioutil.ReadAll(jsonFile)
+
+	// initialise formats ~ various formats the video at provided url is available in
+	var formats Formats
+
+	// unmarshal contents
+	json.Unmarshal(byteVal, &formats)
+
+	// iterate through every format and print respective meta data
+	println("Option\t|\tItag\t|\tType\t\t|\tQuality\n")
+	for i := 0; i < len(formats.Formats); i++ {
+
+		tmpA := strings.Split(formats.Formats[i].MimeType, "; ")
+		println(i, "\t|\t", formats.Formats[i].Itag, "\t|\t", tmpA[0], "\t|\t", formats.Formats[i].QualityLabel, "\n")
+	}
 
 }
