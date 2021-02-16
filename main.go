@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -33,7 +35,7 @@ type Format struct {
 	ProjectionType   string     `json:"projectionType"`
 	AverageBitrate   int32      `json:"averageBitrate"`
 	ApproxDurationMs string     `json:"approxDurationMS"`
-	SignatureCipher  string     `json:"signatureCipher"`
+	URL              string     `json:"url"`
 }
 
 // InitRange which contains it's Start and End
@@ -64,18 +66,12 @@ func main() {
 
 	// fetch source for url
 	resp, err := http.Get(*url)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	// close after usage
+	checkErr(err, "Unable to make http request")
 	defer resp.Body.Close()
 
 	// read contents from url response
 	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("Error reading body: %v", err)
-	}
+	checkErr(err, "Unable to read response body")
 
 	// regex to fetch video urls & meta data
 	re := regexp.MustCompile(`"adaptiveFormats"+.+\]\},"playerAds"`)
@@ -86,16 +82,11 @@ func main() {
 
 	// dump contents into file
 	err = ioutil.WriteFile("temp.json", []byte(vs), 0777)
-	if err != nil {
-		log.Fatal(err)
-	}
+	checkErr(err, "Unable to write to temp.json")
 
 	// read file as json
 	jsonFile, err := os.Open("temp.json")
-	if err != nil {
-		log.Fatalln(err)
-	}
-
+	checkErr(err, "Unable to read temp.json")
 	defer jsonFile.Close()
 
 	byteVal, _ := ioutil.ReadAll(jsonFile)
@@ -110,8 +101,66 @@ func main() {
 	println("Option\t|\tItag\t|\tType\t\t|\tQuality\n")
 	for i := 0; i < len(formats.Formats); i++ {
 
+		// if meme type contains audio ~ break
+		if strings.Contains(formats.Formats[i].MimeType, "audio") {
+			break
+		}
+
+		// display options to download video
 		tmpA := strings.Split(formats.Formats[i].MimeType, "; ")
 		println(i, "\t|\t", formats.Formats[i].Itag, "\t|\t", tmpA[0], "\t|\t", formats.Formats[i].QualityLabel, "\n")
 	}
 
+	// input option to download video
+	print("Enter Option: ")
+	var input int
+	fmt.Scanln(&input)
+
+	// making channel of type string
+	c := make(chan bool)
+
+	// fetch video from url
+	println("\nDownloading Video ...")
+	go fetchFile(c, formats.Formats[input].URL, "temp-video")
+
+	// fetch audio from url
+	println("Downloading Audio ...")
+	go fetchFile(c, formats.Formats[input+1].URL, "temp-audio")
+
+	if <-c && <-c {
+		println("\nMerging Files ...")
+	}
+
+	println("\nDownload Complete !")
+
+}
+
+func fetchFile(c chan bool, url string, title string) {
+
+	// process url ~ replace u2600 to &
+	url = strings.Replace(url, "u0026", "&", -1)
+
+	// make http request &
+	resp, err := http.Get(url)
+	checkErr(err, "Unable to make http request")
+	defer resp.Body.Close()
+
+	// save response to file
+	out, err := os.Create(title)
+	checkErr(err, "Unable to create asset")
+	defer out.Close()
+	io.Copy(out, resp.Body)
+
+	// return data to indicate task completion
+	c <- true
+}
+
+func mergeFiles() {
+
+}
+
+func checkErr(err error, msg string) {
+	if err != nil {
+		log.Fatalln(err, msg)
+	}
 }
