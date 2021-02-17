@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"regexp"
 	"strings"
 )
@@ -97,12 +98,16 @@ func main() {
 	// unmarshal contents
 	json.Unmarshal(byteVal, &formats)
 
+	// audio index
+	var audioStartIndex int
+
 	// iterate through every format and print respective meta data
 	println("Option\t|\tItag\t|\tType\t\t|\tQuality\n")
 	for i := 0; i < len(formats.Formats); i++ {
 
 		// if meme type contains audio ~ break
 		if strings.Contains(formats.Formats[i].MimeType, "audio") {
+			audioStartIndex = i
 			break
 		}
 
@@ -119,18 +124,30 @@ func main() {
 	// making channel of type string
 	c := make(chan bool)
 
-	// fetch video from url
+	// fetch formats to for ffmpeg arguments
+	tmp := strings.Split(formats.Formats[input].MimeType, "; ")
+	videoFormat := strings.Replace(tmp[0], "video/", "", -1)
+
+	tmp = strings.Split(formats.Formats[audioStartIndex].MimeType, "; ")
+	audioFormat := strings.Replace(tmp[0], "audio/", "", -1)
+
 	println("\nDownloading Video ...")
-	go fetchFile(c, formats.Formats[input].URL, "temp-video")
+	go fetchFile(c, formats.Formats[input].URL, "video."+videoFormat)
 
 	// fetch audio from url
 	println("Downloading Audio ...")
-	go fetchFile(c, formats.Formats[input+1].URL, "temp-audio")
+	go fetchFile(c, formats.Formats[input+1].URL, "audio."+audioFormat)
 
 	if <-c && <-c {
-		println("\nMerging Files ...")
+		// after both audio & video files are downloaded
+
+		// merge them :
+		go mergeFiles(c, videoFormat, audioFormat)
+
 	}
 
+	// wait for merge to complete
+	<-c
 	println("\nDownload Complete !")
 
 }
@@ -149,14 +166,24 @@ func fetchFile(c chan bool, url string, title string) {
 	out, err := os.Create(title)
 	checkErr(err, "Unable to create asset")
 	defer out.Close()
+
+	// dump data to temp file
 	io.Copy(out, resp.Body)
 
 	// return data to indicate task completion
 	c <- true
 }
 
-func mergeFiles() {
+func mergeFiles(c chan bool, videoFormat string, audioFormat string) {
 
+	println("\nMerging Files ...")
+
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	_, err = exec.Command(ffmpeg, "-i", "video."+videoFormat, "-i", "audio."+audioFormat, "-c", "copy", "output.mkv").Output()
+	checkErr(err, "unable to merge files")
+
+	// return data to indicate task completion
+	c <- true
 }
 
 func checkErr(err error, msg string) {
